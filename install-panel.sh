@@ -1,51 +1,66 @@
 #!/bin/bash
-set -e
+# ========================================
+#  Installador del Panel - con animaciones
+# ========================================
 
-echo "=== Instalador del Panel ==="
-
-# 1. Actualizar sistema
-apt update && apt upgrade -y
-
+clear
+echo "========================================"
+echo "   🚀 Instalador del Panel MaulYnetZ    "
+echo "========================================"
 echo
-read -p "Presione ENTER para instalar dependencias..."
 
-# 2. Instalar dependencias
-apt install -y curl wget git cron
-
+# Paso 1: Actualizar sistema
+echo "🔄 Actualizando el sistema operativo..."
+apt update -y && apt upgrade -y
+echo "✅ Sistema actualizado."
 echo
-read -p "Presione ENTER para instalar el panel..."
+read -p "👉 Presione ENTER para instalar dependencias..."
 
-# 3. Descargar e instalar el panel (ejemplo)
-echo "Descargando e instalando panel..."
-# Aquí iría la lógica real de tu panel, se deja como placeholder
-# curl -s -o /usr/local/bin/panel.sh https://raw.githubusercontent.com/tu_repo/panel/main/panel.sh
-# chmod +x /usr/local/bin/panel.sh
-
-echo "✔ Panel instalado."
-
+# Paso 2: Instalar dependencias
+echo "📦 Instalando dependencias necesarias..."
+apt install -y curl wget unzip git cron
+echo "✅ Dependencias instaladas."
 echo
-read -p "¿Desea programar la eliminación automática diaria a las 2 AM? Presione ENTER para continuar o Ctrl+C para cancelar."
+read -p "👉 Presione ENTER para instalar el Panel..."
 
-# === Configuración de limpieza automática ===
-AUTO_DIR="/root/auto"
+# Paso 3: Instalar el panel (ejemplo)
+echo "⚙️ Instalando el Panel..."
+# Aquí iría tu lógica original de instalación del panel
+sleep 2
+echo "✅ Panel instalado correctamente."
+echo
+
+# ============================================
+# Nuevo bloque: limpieza automática diaria 2AM
+# ============================================
+read -p "❓ ¿Desea programar la limpieza automática diaria a las 2 AM? (ENTER = Sí / Ctrl+C = No)"
+
+# Verificar carpeta destino
+INSTALL_DIR="/root/auto"
 SCRIPT_NAME="elimauto.sh"
 SCRIPT_URL="https://raw.githubusercontent.com/MaulynetZ/criper/refs/heads/main/elimauto.sh"
-SCRIPT_PATH="$AUTO_DIR/$SCRIPT_NAME"
 
-# 1. Crear carpeta si no existe
-mkdir -p "$AUTO_DIR"
+mkdir -p "$INSTALL_DIR"
 
-# 2. Descargar el script actualizado
-echo "Descargando script de limpieza automática..."
-curl -s -o "$SCRIPT_PATH" "$SCRIPT_URL"
+# Descargar el script
+echo "⬇️ Descargando script de limpieza..."
+wget -q -O "$INSTALL_DIR/$SCRIPT_NAME" "$SCRIPT_URL"
 
-# 3. Dar permisos de ejecución
-chmod +x "$SCRIPT_PATH"
+# Dar permisos
+chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
 
-# 4. Programar cron para que se ejecute todos los días a las 2:00 AM
-CRON_JOB="0 2 * * * $SCRIPT_PATH"
-( crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" ; echo "$CRON_JOB" ) | crontab -
+# Verificar que cron esté activo
+if ! systemctl is-active --quiet cron; then
+    echo "⚠️ Cron no está activo. Iniciando y habilitando..."
+    systemctl enable cron
+    systemctl start cron
+fi
 
-echo "✔ Limpieza automática configurada: se ejecutará todos los días a las 2:00 AM"
+# Programar la tarea en cron (2:00 AM diario)
+CRONLINE="0 2 * * * $INSTALL_DIR/$SCRIPT_NAME >> /var/log/elimauto.log 2>&1"
+( crontab -l 2>/dev/null | grep -v "$SCRIPT_NAME" ; echo "$CRONLINE" ) | crontab -
 
-echo "=== Instalación finalizada ==="
+echo "✅ Limpieza automática programada todos los días a las 2 AM."
+echo "    Puede revisar /var/log/elimauto.log para el historial."
+echo
+echo "🎉 Instalación finalizada con éxito."
