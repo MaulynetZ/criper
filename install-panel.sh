@@ -1,5 +1,5 @@
 #!/bin/bash
-# install-panel.sh
+# Script unificado: instala panel MaulYnetZ + banner
 
 # Colores
 red="\e[1;31m"
@@ -11,7 +11,9 @@ white="\e[1;37m"
 # Barra
 BARRA="${red}==================================================${nc}"
 
-# Actualización del sistema
+# ============================
+# ACTUALIZAR SISTEMA
+# ============================
 echo -e "$BARRA"
 echo -e "          ${white}ACTUALIZANDO SISTEMA${nc}"
 echo -e "$BARRA"
@@ -21,7 +23,9 @@ echo -e "$BARRA"
 read -p "      ▶▷ Presione enter para continuar con la instalación de dependencias ◁◀"
 clear
 
-# Instalación de dependencias
+# ============================
+# INSTALAR DEPENDENCIAS
+# ============================
 echo -e "$BARRA"
 echo -e "          ${white}INSTALANDO DEPENDENCIAS${nc}"
 echo -e "$BARRA"
@@ -50,7 +54,9 @@ echo -e "$BARRA"
 read -p "      ▶▷ Presione enter para instalar el panel ◁◀"
 clear
 
-# Instalación del panel
+# ============================
+# INSTALACIÓN DEL PANEL
+# ============================
 INSTALL_DIR="/root/MaulYnetZ"
 SCRIPT1_URL="https://raw.githubusercontent.com/MaulynetZ/criper/main/Panel_MaulYnetZ.sh"
 SCRIPT2_URL="https://raw.githubusercontent.com/MaulynetZ/criper/main/Protocolos.sh"
@@ -95,6 +101,33 @@ echo -e "\n$BARRA"
 echo -e "${green}Instalación del panel completada. Puedes ejecutar el panel con el comando: $ALIAS_NAME${nc}"
 echo -e "$BARRA"
 
+# ============================
+# INSTALACIÓN DEL BANNER
+# ============================
+echo -e "\n${yellow}Instalando banner personalizado...${nc}"
+
+apt-get install -y figlet lolcat > /dev/null 2>&1
+
+mkdir -p /etc/AdMaulYnetZ/tmp
+echo "$(date +%F)" > /etc/AdMaulYnetZ/version
+
+cat << 'EOF' > /etc/AdMaulYnetZ/bashrc
+if [[ $(echo $PATH | grep "/usr/games") = "" ]]; then PATH=$PATH:/usr/games; fi
+v=$(cat /etc/AdMaulYnetZ/version)
+[[ -e /etc/AdMaulYnetZ/new_version ]] && up=$(cat /etc/AdMaulYnetZ/new_version) || up=$v
+[[ $(date '+%s' -d $up) -gt $(date '+%s' -d $(cat /etc/AdMaulYnetZ/version)) ]] && v2="Nueva Version disponible: $v >>> $up" || v2="Script Version: $v"
+[[ -e "/etc/AdMaulYnetZ/tmp/message.txt" ]] && mess1="$(cat /etc/AdMaulYnetZ/tmp/message.txt)"
+[[ -z "$mess1" ]] && mess1="@MaulYnetZ"
+clear && echo -e "\n$(figlet -f small "AdMaulYnetZ")\n        RESELLER : $mess1 \n\n   Para iniciar AdMaulYnetZ escriba:  mj \n\n   $v2\n\n" | lolcat
+EOF
+
+grep -q "AdMaulYnetZ/bashrc" /etc/bash.bashrc || echo '[[ -e /etc/AdMaulYnetZ/bashrc ]] && source /etc/AdMaulYnetZ/bashrc' >> /etc/bash.bashrc
+
+echo -e "${green}✅ Banner AdMaulYnetZ instalado correctamente. Reloguea tu VPS para verlo.${nc}"
+
+# ============================
+# FINAL
+# ============================
 read -p "      ▶▷ Presione enter para finalizar ◁◀"
 clear
 echo -e "\n\n${green}¡Instalación completada!${nc}\n"
