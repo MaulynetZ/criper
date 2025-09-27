@@ -148,7 +148,7 @@ chmod +x /root/auto/elimauto.sh
 
 # Programar cron job diario a las 2 AM
 # Primero quitamos cualquier línea previa igual para no duplicar
-( crontab -l 2>/dev/null | grep -v '/root/auto/elimauto.sh' ; echo "0 2 * * * /root/auto/elimauto.sh" ) | crontab -
+(crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "0 2 * * * /root/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
 
 echo -e "\033[1;32m✔ Limpieza automática programada correctamente.\033[0m"
 
