@@ -146,6 +146,11 @@ wget -O /root/auto/elimauto.sh https://raw.githubusercontent.com/MaulynetZ/cripe
 # Dar permisos de ejecución
 chmod +x /root/auto/elimauto.sh
 
+# Asegurar carpeta y archivo de log
+mkdir -p /var/log/maulynetz
+touch /var/log/maulynetz/elimauto.log
+chmod 644 /var/log/maulynetz/elimauto.log
+
 # Programar cron job diario a las 2 AM
 # Primero quitamos cualquier línea previa igual para no duplicar
 (crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "0 2 * * * /root/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
