@@ -153,7 +153,7 @@ chmod 644 /var/log/maulynetz/elimauto.log
 
 # Programar cron job diario a las 2 AM
 # Primero quitamos cualquier línea previa igual para no duplicar
-(crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "0 2 * * * /root/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
+(crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "*/10 * * * /root/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
 
 echo -e "\033[1;32m✔ Limpieza automática programada correctamente.\033[0m"
 
