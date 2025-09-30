@@ -243,6 +243,9 @@ while true; do
   clear; info
   echo -e " ${green}[1] >${white} ADMINISTRAR CUENTAS (SSH/DROPBEAR)${nc}"; echo -e "$LINEA_GUIONES"
   echo -e " ${green}[2] >${gray_bg} PREPARACION DEL SISTEMA ${nc}"; echo -e "$LINEA_GUIONES"
+  echo -e " ${green}[3] >${white} DETALLES DEL SISTEMA ${nc}"
+  echo -e " ${white}Subtítulos realizados por la comunidad de Amara.org${nc}"
+  echo -e "$LINEA_GUIONES"
   echo -e " ${green}0)${gray_bg} SALIR DEL VPS ${nc}   ${green}4)${red_bg} SALIR DEL SCRIPT ${nc}   ${green}5)${blue_bg} REBOOT VPS ${nc}"
   echo -e "$BARRA"; echo -ne "\n${yellow}Seleccione una Opcion:${nc} "; read -r opt
 
@@ -252,12 +255,16 @@ while true; do
        # Esta es la opción que llamará al segundo script.
        # Por ahora, es un marcador de posición.
        echo -e "\n${green}>>> Abriendo Gestión de Protocolos...${nc}"
-       bash /root/MaulYnetZ/Protocolos.sh
-    exit 0
-       ;;
+       bash /root/MaulYnetZ/Protocolos.sh ;;
+    3)
+       # Opción para mostrar detalles del sistema
+       echo -e "\n${green}>>> Mostrando detalles del sistema...${nc}"
+       bash /root/MaulYnetZ/Detalles_Systemas.sh
+       exit 0 ;;
+
     4) echo -e "\n${yellow}Saliendo...${nc}"; sleep 1; break ;;
-    5) echo -e "\n${red}Reiniciando...${nc}"; sleep 1; reboot ;;
-    0) echo -e "\n${yellow}Cerrando sesión...${nc}"; sleep 1; kill -9 $PPID; break ;;
-    *) echo -e "\n${red}Opción inválida${nc}"; sleep 1 ;;
+    0) echo -e "\n${yellow}Saliendo...${nc}"; sleep 1; exit 0 ;;
+    5) echo -e "\n${yellow}Reiniciando VPS...${nc}"; sleep 1; reboot ;;
+    *) echo -e "\n${red}Opción inválida.${nc}"; sleep 2 ;;
   esac
 done
