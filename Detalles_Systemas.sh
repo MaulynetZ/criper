@@ -104,8 +104,7 @@ while true; do
     2) refrescar_memoria ;;
     3) habilitar_root ;;
     4) detalles ;;
-    0) source /root/MaulYnetZ/Panel_MaulYnetZ.sh
-return ;;
+    0) return;;
     *) echo "Opción inválida"; sleep 2 ;;
   esac
 done
