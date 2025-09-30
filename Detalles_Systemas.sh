@@ -104,7 +104,7 @@ while true; do
     2) refrescar_memoria ;;
     3) habilitar_root ;;
     4) detalles ;;
-    0) return;;
+    0) break;;
     *) echo "Opción inválida"; sleep 2 ;;
   esac
 done
