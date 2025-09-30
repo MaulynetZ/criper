@@ -60,6 +60,7 @@ clear
 INSTALL_DIR="/root/MaulYnetZ"
 SCRIPT1_URL="https://raw.githubusercontent.com/MaulynetZ/criper/main/Panel_MaulYnetZ.sh"
 SCRIPT2_URL="https://raw.githubusercontent.com/MaulynetZ/criper/main/Protocolos.sh"
+SCRIPT3_URL="https://raw.githubusercontent.com/MaulynetZ/criper/refs/heads/main/Detalles_Systemas.sh"
 ALIAS_NAME="mj"
 ALIAS_CMD="/root/MaulYnetZ/Panel_MaulYnetZ.sh"
 
@@ -79,9 +80,12 @@ sleep 0.2
 curl -sSL "$SCRIPT2_URL" -o "$INSTALL_DIR/Protocolos.sh"
 echo -e "${green}✔ Protocolos.sh descargado${nc}"
 sleep 0.2
+curl -sSL "$SCRIPT3_URL" -o "$INSTALL_DIR/Detalles_Systemas.sh"
+echo -e "${green}✔ Detalles_Systemas.sh descargado${nc}"
+sleep 0.2
 
 echo -e "${yellow}Asignando permisos de ejecución a los scripts...${nc}"
-chmod +x "$INSTALL_DIR/Panel_MaulYnetZ.sh" "$INSTALL_DIR/Protocolos.sh"
+chmod +x "$INSTALL_DIR/Panel_MaulYnetZ.sh" "$INSTALL_DIR/Protocolos.sh" "$INSTALL_DIR/Detalles_Systemas.sh"
 echo -e "${green}✔ Permisos asignados${nc}"
 sleep 0.2
 
