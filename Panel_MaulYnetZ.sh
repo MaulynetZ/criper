@@ -254,12 +254,11 @@ while true; do
        # Esta es la opción que llamará al segundo script.
        # Por ahora, es un marcador de posición.
        echo -e "\n${green}>>> Abriendo Gestión de Protocolos...${nc}"
-       bash /root/MaulYnetZ/Protocolos.sh ;;
+       source /root/MaulYnetZ/Protocolos.sh ;;
     3)
        # Opción para mostrar detalles del sistema
        echo -e "\n${green}>>> Mostrando detalles del sistema...${nc}"
-       bash /root/MaulYnetZ/Detalles_Systemas.sh
-       exit 0 ;;
+       source /root/MaulYnetZ/Detalles_Systemas.sh ;;
 
     4) echo -e "\n${yellow}Saliendo...${nc}"; sleep 1; break ;;
     0) echo -e "\n${yellow}Saliendo...${nc}"; sleep 1; exit 0 ;;
