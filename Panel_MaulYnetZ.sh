@@ -244,7 +244,6 @@ while true; do
   echo -e " ${green}[1] >${white} ADMINISTRAR CUENTAS (SSH/DROPBEAR)${nc}"; echo -e "$LINEA_GUIONES"
   echo -e " ${green}[2] >${gray_bg} PREPARACION DEL SISTEMA ${nc}"; echo -e "$LINEA_GUIONES"
   echo -e " ${green}[3] >${white} DETALLES DEL SISTEMA ${nc}"
-  echo -e " ${white}Subtítulos realizados por la comunidad de Amara.org${nc}"
   echo -e "$LINEA_GUIONES"
   echo -e " ${green}0)${gray_bg} SALIR DEL VPS ${nc}   ${green}4)${red_bg} SALIR DEL SCRIPT ${nc}   ${green}5)${blue_bg} REBOOT VPS ${nc}"
   echo -e "$BARRA"; echo -ne "\n${yellow}Seleccione una Opcion:${nc} "; read -r opt
