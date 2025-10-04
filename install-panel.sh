@@ -11,14 +11,32 @@ white="\e[1;37m"
 # Barra
 BARRA="${red}==================================================${nc}"
 
+# Función para verificar si el usuario es root o tiene sudo
+check_root_or_sudo() {
+    if [[ "$EUID" -ne 0 ]]; then
+        # No es root, verificar si sudo está disponible
+        if ! command -v sudo &> /dev/null; then
+            echo -e "${red}Error: Este script requiere privilegios de root o sudo para ejecutarse.${nc}"
+            exit 1
+        fi
+        # Si sudo está disponible, usar sudo para ejecutar el script
+        echo -e "${yellow}Ejecutando el script con sudo...${nc}"
+        sudo "$0" "$@"
+        exit $?
+    fi
+}
+
+# Llamar a la función al inicio del script
+check_root_or_sudo "$@"
+
 # ============================
 # ACTUALIZAR SISTEMA
 # ============================
 echo -e "$BARRA"
 echo -e "          ${white}ACTUALIZANDO SISTEMA${nc}"
 echo -e "$BARRA"
-sudo apt update -y
-sudo apt upgrade -y
+apt update -y
+apt upgrade -y
 echo -e "$BARRA"
 read -p "      ▶▷ Presione enter para continuar con la instalación de dependencias ◁◀"
 clear
@@ -34,7 +52,7 @@ echo -e "              ${yellow}$ubuntu_version${nc}"
 echo -e "             ${green}INSTALANDO DEPENDENCIAS${nc}\n"
 dependencias=(sudo bsdmainutils zip unzip ufw curl python2 python3 python3-pip openssl screen cron iptables lsof nano at mlocate gawk grep bc jq npm nodejs socat netcat netcat-traditional net-tools cowsay figlet lolcat sqlite3 libsqlite3-dev locales)
 for dep in "${dependencias[@]}"; do
-    if sudo apt-get install -y "$dep" >/dev/null 2>&1; then
+    if apt-get install -y "$dep" >/dev/null 2>&1; then
         status="${green}INSTALL${nc}"
     else
         status="${red}FAILED${nc}"
@@ -44,8 +62,8 @@ for dep in "${dependencias[@]}"; do
 done
 
 echo -e "\n${yellow}Habilitando servicios críticos (AT y CRON)...${nc}"
-sudo systemctl enable --now atd >/dev/null 2>&1
-sudo systemctl enable --now cron >/dev/null 2>&1
+systemctl enable --now atd >/dev/null 2>&1
+systemctl enable --now cron >/dev/null 2>&1
 
 echo -e "\n$BARRA"
 echo -e " ${yellow}Si alguna de las dependencias falla, puede intentar instalarla manualmente."
@@ -58,9 +76,9 @@ clear
 # INSTALACIÓN DEL PANEL
 # ============================
 INSTALL_DIR="/root/MaulYnetZ"
-SCRIPT1_URL="https://raw.githubusercontent.com/MaulynetZ/criper/main/Panel_MaulYnetZ.sh"
-SCRIPT2_URL="https://raw.githubusercontent.com/MaulynetZ/criper/main/Protocolos.sh"
-SCRIPT3_URL="https://raw.githubusercontent.com/MaulynetZ/criper/refs/heads/main/Detalles_Systemas.sh"
+SCRIPT1_URL="https://raw.githubusercontent.com/MaulYnetZ/criper/main/Panel_MaulYnetZ.sh"
+SCRIPT2_URL="https://raw.githubusercontent.com/MaulYnetZ/criper/main/Protocolos.sh"
+SCRIPT3_URL="https://raw.githubusercontent.com/MaulYnetZ/criper/refs/heads/main/Detalles_Systemas.sh"
 ALIAS_NAME="mj"
 ALIAS_CMD="/root/MaulYnetZ/Panel_MaulYnetZ.sh"
 
@@ -90,15 +108,19 @@ echo -e "${green}✔ Permisos asignados${nc}"
 sleep 0.2
 
 # Crear alias en bashrc si no existe
-if ! grep -Fxq "alias $ALIAS_NAME=\"$ALIAS_CMD\"" ~/.bashrc; then
-    echo "alias $ALIAS_NAME=\"$ALIAS_CMD\"" >> ~/.bashrc
-fi
+# Esto se ejecutará para el usuario que invoca el script (que ahora es root por el sudo)
+# Para que el alias esté disponible para el usuario original, se debe añadir al bashrc del usuario original
+# Sin embargo, el alias global en /usr/local/bin ya maneja esto de forma más robusta.
+# Se mantiene la línea original para compatibilidad, pero su efecto será limitado si no se usa el usuario original.
+# if ! grep -Fxq "alias $ALIAS_NAME=\"$ALIAS_CMD\"" ~/.bashrc; then
+#     echo "alias $ALIAS_NAME=\"$ALIAS_CMD\"" >> ~/.bashrc
+# fi
 
 # Crear wrapper en /usr/local/bin para que funcione siempre
 echo -e "${yellow}Creando acceso directo en /usr/local/bin...${nc}"
 echo "#!/bin/bash
-bash \"$ALIAS_CMD\" \"\$@\"" | sudo tee /usr/local/bin/$ALIAS_NAME >/dev/null
-sudo chmod +x /usr/local/bin/$ALIAS_NAME
+bash \"$ALIAS_CMD\" \"\$@\"" | tee /usr/local/bin/$ALIAS_NAME >/dev/null
+chmod +x /usr/local/bin/$ALIAS_NAME
 echo -e "${green}✔ Alias global creado: $ALIAS_NAME${nc}"
 
 echo -e "\n$BARRA"
@@ -119,7 +141,7 @@ cat << 'EOF' > /etc/AdMaulYnetZ/bashrc
 if [[ $(echo $PATH | grep "/usr/games") = "" ]]; then PATH=$PATH:/usr/games; fi
 v=$(cat /etc/AdMaulYnetZ/version)
 [[ -e /etc/AdMaulYnetZ/new_version ]] && up=$(cat /etc/AdMaulYnetZ/new_version) || up=$v
-[[ $(date '+%s' -d $up) -gt $(date '+%s' -d $(cat /etc/AdMaulYnetZ/version)) ]] && v2="Nueva Version disponible: $v >>> $up" || v2="Script Version: $v"
+[[ $(date \'\'+%s\'\' -d $up) -gt $(date \'\'+%s\'\' -d $(cat /etc/AdMaulYnetZ/version)) ]] && v2="Nueva Version disponible: $v >>> $up" || v2="Script Version: $v"
 [[ -e "/etc/AdMaulYnetZ/tmp/message.txt" ]] && mess1="$(cat /etc/AdMaulYnetZ/tmp/message.txt)"
 [[ -z "$mess1" ]] && mess1="@MaulYnetZ"
 clear && echo -e "\n$(figlet -f small "AdMaulYnetZ")\n        RESELLER : $mess1 \n\n   Para iniciar AdMaulYnetZ escriba:  mj \n\n   $v2\n\n" | lolcat
@@ -157,7 +179,7 @@ chmod 644 /var/log/maulynetz/elimauto.log
 
 # Programar cron job diario a las 2 AM
 # Primero quitamos cualquier línea previa igual para no duplicar
-(crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "0 2 * * * /root/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
+(crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "0 2 * * * /opt/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
 
 echo -e "\033[1;32m✔ Limpieza automática programada correctamente.\033[0m"
 
