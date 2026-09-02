@@ -686,6 +686,253 @@ function udpcustom_submenu() {
 # (A) --- Menú Principal ORIGINAL del Script A (con enlaces a 3/4 añadidos)
 # ---------------------------
 
+# ================================================================
+# HYSTERIA 1 + API — módulo para Protocolos.sh
+# Insertar antes de function main_menu() y añadir opción 5 al menú.
+# No copia secretos ni certificados del servidor original.
+# ================================================================
+HYSTERIA_BIN="/usr/local/bin/hysteria"
+HYSTERIA_DIR="/etc/hysteria"
+HYSTERIA_CONFIG="$HYSTERIA_DIR/config.json"
+HYSTERIA_AUTH="$HYSTERIA_DIR/auth.sh"
+HYSTERIA_SERVICE="hysteria.service"
+HYSTERIA_API_SERVICE="mastervpn-api.service"
+HYSTERIA_URL="https://github.com/apernet/hysteria/releases/download/v1.3.5/hysteria-linux-amd64"
+HYSTERIA_SHA256="41dc8bc3fff6fc1f031666eb294f10b481b80b66229d7c6aca88398d0fba839d"
+
+function is_hysteria_installed() {
+    [ -x "$HYSTERIA_BIN" ] && [ -f "$HYSTERIA_CONFIG" ]
+}
+
+function get_hysteria_status() {
+    if systemctl is-active --quiet "$HYSTERIA_SERVICE"; then echo -e "${C_GREEN}ON${C_RESET}"; else echo -e "${C_RED}OFF${C_RESET}"; fi
+}
+
+function hysteria_nat_backup() {
+    local dir="/root/hysteria-nat-backup-$(date +%Y%m%d-%H%M%S)"
+    sudo install -d -m 0700 "$dir"
+    sudo iptables-save > "$dir/iptables.v4" 2>/dev/null || true
+    sudo ip6tables-save > "$dir/iptables.v6" 2>/dev/null || true
+    sudo nft list ruleset > "$dir/nft.rules" 2>/dev/null || true
+    echo "$dir"
+}
+
+function hysteria_nat_clear_managed() {
+    while sudo iptables -t nat -C PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports 36712 2>/dev/null; do sudo iptables -t nat -D PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports 36712; done
+    while sudo iptables -t nat -C PREROUTING -i ens3 -p udp --dport 1:65535 -j DNAT --to-destination :36712 2>/dev/null; do sudo iptables -t nat -D PREROUTING -i ens3 -p udp --dport 1:65535 -j DNAT --to-destination :36712; done
+    while sudo ip6tables -t nat -C PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports 36712 2>/dev/null; do sudo ip6tables -t nat -D PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports 36712; done
+    while sudo ip6tables -t nat -C PREROUTING -i ens3 -p udp --dport 1:65535 -j DNAT --to-destination :36712 2>/dev/null; do sudo ip6tables -t nat -D PREROUTING -i ens3 -p udp --dport 1:65535 -j DNAT --to-destination :36712; done
+}
+
+function hysteria_nat_persist() {
+    sudo install -d -m 0755 /etc/iptables
+    sudo iptables-save | sudo tee /etc/iptables/rules.v4 >/dev/null
+    sudo ip6tables-save | sudo tee /etc/iptables/rules.v6 >/dev/null 2>&1 || true
+    if command -v netfilter-persistent >/dev/null 2>&1; then sudo netfilter-persistent save >/dev/null 2>&1 || true; fi
+}
+
+function hysteria_configure_nat() {
+    clear
+    echo -e "${C_WHITE}Modo de redirección Hysteria${C_RESET}"
+    echo "1) Hysteria independiente: UDP 1:65535 -> puerto Hysteria"
+    echo "2) Convivir con UDP-Custom: 1:19999 -> 36712, 20000:50000 -> puerto Hysteria, 50001:65535 -> 36712"
+    read -r -p "Seleccione [1/2]: " mode
+    local backup
+    backup=$(hysteria_nat_backup)
+    hysteria_nat_clear_managed
+    if [ "$mode" = "1" ]; then
+        sudo iptables -t nat -A PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports "$HY_PORT"
+        sudo ip6tables -t nat -A PREROUTING -p udp --dport 1:65535 -j REDIRECT --to-ports "$HY_PORT" 2>/dev/null || true
+    elif [ "$mode" = "2" ]; then
+        sudo iptables -t nat -A PREROUTING -p udp --dport 1:19999 -j REDIRECT --to-ports 36712
+        sudo iptables -t nat -A PREROUTING -p udp --dport 20000:50000 -j REDIRECT --to-ports "$HY_PORT"
+        sudo iptables -t nat -A PREROUTING -p udp --dport 50001:65535 -j REDIRECT --to-ports 36712
+        sudo ip6tables -t nat -A PREROUTING -p udp --dport 1:19999 -j REDIRECT --to-ports 36712 2>/dev/null || true
+        sudo ip6tables -t nat -A PREROUTING -p udp --dport 20000:50000 -j REDIRECT --to-ports "$HY_PORT" 2>/dev/null || true
+        sudo ip6tables -t nat -A PREROUTING -p udp --dport 50001:65535 -j REDIRECT --to-ports 36712 2>/dev/null || true
+    else
+        echo "Modo inválido; no se modificaron reglas."; return 1
+    fi
+    hysteria_nat_persist
+    echo -e "${C_GREEN}NAT aplicado y persistente. Backup: $backup${C_RESET}"
+}
+
+function install_hysteria() {
+    clear
+    echo -e "${C_YELLOW}==================================${C_RESET}"
+    echo -e "${C_WHITE}   Instalador Hysteria 1 + API${C_RESET}"
+    echo -e "${C_YELLOW}==================================${C_RESET}"
+    read -r -p "Puerto UDP de Hysteria [20000]: " HY_PORT
+    HY_PORT="${HY_PORT:-20000}"
+    read -r -p "Obfs [MaulynetZ]: " HY_OBFS
+    HY_OBFS="${HY_OBFS:-MaulynetZ}"
+    read -r -p "Subida Mbps [60]: " HY_UP
+    HY_UP="${HY_UP:-60}"
+    read -r -p "Bajada Mbps [75]: " HY_DOWN
+    HY_DOWN="${HY_DOWN:-75}"
+    read -r -p "Instalar también API local en :8989? [S/n]: " HY_API_CHOICE
+    HY_API_CHOICE="${HY_API_CHOICE:-S}"
+
+    if ! [[ "$HY_PORT" =~ ^[0-9]+$ ]] || [ "$HY_PORT" -lt 1 ] || [ "$HY_PORT" -gt 65535 ]; then echo "Puerto inválido"; return 1; fi
+    if ! [[ "$HY_UP" =~ ^[0-9]+$ ]] || ! [[ "$HY_DOWN" =~ ^[0-9]+$ ]]; then echo "Velocidad inválida"; return 1; fi
+
+    sudo apt-get update -y || return 1
+    sudo apt-get install -y ca-certificates curl openssl python3 || return 1
+    sudo install -d -m 0755 "$HYSTERIA_DIR"
+    local tmp
+    tmp=$(mktemp)
+    if ! curl -fL --retry 3 --proto '=https' --tlsv1.2 "$HYSTERIA_URL" -o "$tmp"; then rm -f "$tmp"; return 1; fi
+    if ! printf '%s  %s\n' "$HYSTERIA_SHA256" "$tmp" | sha256sum -c -; then echo "Hash no coincide; abortando"; rm -f "$tmp"; return 1; fi
+    sudo install -m 0755 "$tmp" "$HYSTERIA_BIN"
+    rm -f "$tmp"
+
+    if [ ! -s "$HYSTERIA_DIR/server.key" ] || [ ! -s "$HYSTERIA_DIR/server.crt" ]; then
+        sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+          -keyout "$HYSTERIA_DIR/server.key" -out "$HYSTERIA_DIR/server.crt" \
+          -subj '/C=US/ST=NY/L=NY/O=VPN/CN=hysteria' >/dev/null 2>&1
+        sudo chmod 0600 "$HYSTERIA_DIR/server.key"
+        sudo chmod 0644 "$HYSTERIA_DIR/server.crt"
+    fi
+
+    sudo tee "$HYSTERIA_AUTH" >/dev/null <<'AUTH'
+#!/usr/bin/env bash
+LOGFILE="/tmp/hysteria_auth_debug.log"
+echo "==== $(date '+%Y-%m-%d %H:%M:%S') ====" >> "$LOGFILE"
+echo "RAW ARG1=[$1] ARG2=[$2]" >> "$LOGFILE"
+USER="$(echo "$2" | cut -d':' -f1 | tr -d '[:space:]')"
+echo "EXTRACTED USER=[$USER]" >> "$LOGFILE"
+if ! id "$USER" >/dev/null 2>&1; then echo "USER NOT FOUND" >> "$LOGFILE"; exit 1; fi
+SHADOW_LINE="$(grep "^$USER:" /etc/shadow 2>/dev/null || true)"
+if echo "$SHADOW_LINE" | cut -d: -f2 | grep -qE '^(!|\*)'; then echo "USER IS LOCKED" >> "$LOGFILE"; exit 1; fi
+echo "USER EXISTS AND NOT LOCKED" >> "$LOGFILE"
+exit 0
+AUTH
+    sudo chmod 0755 "$HYSTERIA_AUTH"
+
+    sudo tee "$HYSTERIA_CONFIG" >/dev/null <<JSON
+{
+  "listen": ":$HY_PORT",
+  "cert": "$HYSTERIA_DIR/server.crt",
+  "key": "$HYSTERIA_DIR/server.key",
+  "auth": {
+    "mode": "external",
+    "config": { "cmd": "$HYSTERIA_AUTH" }
+  },
+  "obfs": "$HY_OBFS",
+  "up_mbps": $HY_UP,
+  "down_mbps": $HY_DOWN
+}
+JSON
+    sudo chmod 0644 "$HYSTERIA_CONFIG"
+
+    sudo tee "/etc/systemd/system/$HYSTERIA_SERVICE" >/dev/null <<UNIT
+[Unit]
+Description=Hysteria V1 Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=$HYSTERIA_BIN -config $HYSTERIA_CONFIG server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    if [[ "$HY_API_CHOICE" =~ ^[SsYy]$ ]]; then
+        sudo tee /root/servidor_api.py >/dev/null <<'PY'
+import http.server, socketserver, json, subprocess, re
+from datetime import datetime
+class MyHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            n = int(self.headers['Content-Length'])
+            data = self.rfile.read(n).decode('utf-8')
+            m = re.search(r'[a-f0-9]{32}', data)
+            if not m:
+                self.send_response(400); self.end_headers(); return
+            user = m.group(0)
+            res = subprocess.getoutput(f"chage -l {user} 2>/dev/null | grep 'Account expires' | cut -d ':' -f 2").strip()
+            if 'never' in res.lower() or not res: expiry = '2099/12/31'
+            else:
+                try: expiry = datetime.strptime(res, '%b %d, %Y').strftime('%Y/%m/%d')
+                except Exception: expiry = '2026/12/31'
+            gecos = subprocess.getoutput(f'getent passwd {user} | cut -d: -f5').strip()
+            fields = gecos.split(',')
+            wifi = len(fields) >= 4 and fields[3].lower() == 'wifi'
+            body = json.dumps({'expiry': expiry, 'wifi': wifi}).encode()
+            self.send_response(200); self.send_header('Content-type', 'application/json'); self.end_headers(); self.wfile.write(body)
+        except Exception:
+            self.send_response(500); self.end_headers()
+    def log_message(self, format, *args): return
+socketserver.TCPServer.allow_reuse_address = True
+with socketserver.TCPServer(('', 8989), MyHandler) as httpd: httpd.serve_forever()
+PY
+        sudo chmod 0755 /root/servidor_api.py
+        sudo tee "/etc/systemd/system/$HYSTERIA_API_SERVICE" >/dev/null <<UNIT
+[Unit]
+Description=MasterVPN API Service (Python)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/servidor_api.py
+Restart=always
+RestartSec=5
+User=root
+WorkingDirectory=/root
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    fi
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now "$HYSTERIA_SERVICE"
+    if [[ "$HY_API_CHOICE" =~ ^[SsYy]$ ]]; then sudo systemctl enable --now "$HYSTERIA_API_SERVICE"; fi
+    hysteria_configure_nat
+    echo -e "${C_GREEN}Hysteria instalado en UDP :$HY_PORT${C_RESET}"
+    [[ "$HY_API_CHOICE" =~ ^[SsYy]$ ]] && echo -e "${C_GREEN}API instalada en TCP :8989${C_RESET}"
+    read -r -p "Presiona ENTER para continuar..."
+}
+
+function hysteria_admin_menu() {
+    while true; do
+        clear
+        echo -e "${C_YELLOW}==================================${C_RESET}"
+        echo -e "${C_WHITE}      ADMINISTRADOR HYSTERIA 1${C_RESET}"
+        echo -e "${C_YELLOW}==================================${C_RESET}"
+        echo -e "${C_CYAN}[1]${C_WHITE} Instalar/Reinstalar Hysteria${C_RESET}"
+        echo -e "${C_CYAN}[2]${C_WHITE} Estado${C_RESET}"
+        echo -e "${C_CYAN}[3]${C_WHITE} Reiniciar Hysteria y API${C_RESET}"
+        echo -e "${C_CYAN}[4]${C_WHITE} Ver logs${C_RESET}"
+        echo -e "${C_CYAN}[5]${C_WHITE} Ver configuración (sin secretos)${C_RESET}"
+        echo -e "${C_RED}[6]${C_WHITE} Desinstalar Hysteria y API${C_RESET}"
+        echo -e "${C_CYAN}[0]${C_WHITE} Volver${C_RESET}"
+        read -r -p "Seleccione una opción: " opt
+        case "$opt" in
+            1) install_hysteria;;
+            2) systemctl status "$HYSTERIA_SERVICE" --no-pager; systemctl status "$HYSTERIA_API_SERVICE" --no-pager 2>/dev/null || true; read -r -p "ENTER...";;
+            3) sudo systemctl restart "$HYSTERIA_SERVICE"; sudo systemctl restart "$HYSTERIA_API_SERVICE" 2>/dev/null || true; read -r -p "ENTER...";;
+            4) sudo journalctl -u "$HYSTERIA_SERVICE" -n 50 --no-pager; sudo journalctl -u "$HYSTERIA_API_SERVICE" -n 30 --no-pager 2>/dev/null || true; read -r -p "ENTER...";;
+            5) sudo sed -E 's/(password|passwd|token|auth|secret|private[_-]?key)([[:space:]]*[:=][[:space:]]*).*/\1\2<REDACTED>/I' "$HYSTERIA_CONFIG" 2>/dev/null; read -r -p "ENTER...";;
+            6) read -r -p "Escriba DESINSTALAR para confirmar: " ok; if [ "$ok" = "DESINSTALAR" ]; then sudo systemctl disable --now "$HYSTERIA_SERVICE" 2>/dev/null || true; sudo systemctl disable --now "$HYSTERIA_API_SERVICE" 2>/dev/null || true; sudo rm -f "/etc/systemd/system/$HYSTERIA_SERVICE" "/etc/systemd/system/$HYSTERIA_API_SERVICE" "$HYSTERIA_BIN" /root/servidor_api.py; sudo systemctl daemon-reload; echo "Eliminado"; fi; read -r -p "ENTER...";;
+            0) return;;
+            *) echo "Opción inválida"; sleep 1;;
+        esac
+    done
+}
+
+function hysteria_submenu() {
+    if is_hysteria_installed; then hysteria_admin_menu; else install_hysteria; fi
+}
+
+# En main_menu(), agregar una línea después de UDP-Custom:
+# echo -e "${C_CYAN}[5] ${C_WHITE}Hysteria 1 + API ...................... [$(if is_hysteria_installed; then get_hysteria_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
+# En el case de main_menu(), agregar:
+# 5) hysteria_submenu;;
 function main_menu() {
     while true; do
         clear
@@ -697,6 +944,7 @@ function main_menu() {
         echo -e "${C_CYAN}[2] ${C_WHITE}SSL (Stunnel) .......................... [$(if is_stunnel4_installed; then get_stunnel_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
         echo -e "${C_CYAN}[3] ${C_WHITE}BadVPN-UDP ............................. [$(get_badvpn_status)]${C_RESET}"
         echo -e "${C_CYAN}[4] ${C_WHITE}UDP-Custom ............................. [$(get_udpcustom_status)]${C_RESET}"
+        echo -e "${C_CYAN}[5] ${C_WHITE}Hysteria 1 + API ...................... [$(if is_hysteria_installed; then get_hysteria_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
         echo -e "${C_BLUE}==================================================${C_RESET}"
         echo -e "${C_CYAN}[0] ${C_WHITE}Salir del Panel${C_RESET}"
         echo -e "${C_BLUE}==================================================${C_RESET}"
@@ -708,6 +956,7 @@ function main_menu() {
             2) ssl_submenu;;
             3) badvpn_submenu;;
             4) udpcustom_submenu;;
+            5) hysteria_submenu;;
             0)
               bash /root/MaulYnetZ/Panel_MaulYnetZ.sh
                       exit 0;;
