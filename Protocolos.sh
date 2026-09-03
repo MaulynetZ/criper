@@ -9,15 +9,15 @@
 # ============================================================
 
 # --- Definición de Colores (igual que Script A, con agregado C_GRAY) ---
-C_RED='\e[1;31m'
-C_GREEN='\e[1;32m'
-C_YELLOW='\e[1;33m' # Mantener el color amarillo estándar
-C_BLUE='\e[1;34m'
-C_MAGENTA='\e[1;35m'
-C_CYAN='\e[1;36m'
-C_WHITE='\e[1;37m'
-C_RESET='\e[0m'
-C_GRAY='\e[1;90m'   # añadido para elementos de estado (no altera paleta A)
+C_RED=$'\033[1;31m'
+C_GREEN=$'\033[1;32m'
+C_YELLOW=$'\033[1;33m' # Mantener el color amarillo estándar
+C_BLUE=$'\033[1;34m'
+C_MAGENTA=$'\033[1;35m'
+C_CYAN=$'\033[1;36m'
+C_WHITE=$'\033[1;37m'
+C_RESET=$'\033[0m'
+C_GRAY=$'\033[1;90m'   # añadido para elementos de estado (no altera paleta A)
 
 # ---------------------------
 # (A) --- Funciones del Script A (sin modificar) ---
@@ -898,29 +898,124 @@ UNIT
     read -r -p "Presiona ENTER para continuar..."
 }
 
+function hysteria_metrics_enabled() {
+    command -v jq >/dev/null 2>&1 && jq -e '.prometheus_listen != null and .prometheus_listen != "" and .prometheus_listen != "null"' "$HYSTERIA_CONFIG" >/dev/null 2>&1
+}
+function hysteria_metrics_readable() {
+    clear
+    echo -e "${C_YELLOW}==================================${C_RESET}"
+    echo -e "${C_WHITE}       USUARIOS CONECTADOS${C_RESET}"
+    echo -e "${C_YELLOW}==================================${C_RESET}"
+    echo
+    if ! hysteria_metrics_enabled; then
+        echo -e "${C_YELLOW}Métricas desactivadas.${C_RESET}"
+        echo "Entre en la opción 8 y escriba ACTIVAR."
+        read -r -p "ENTER..."
+        return
+    fi
+    data=$(curl -fsS --max-time 4 http://127.0.0.1:8080/metrics 2>/dev/null || true)
+    if [ -z "$data" ]; then
+        echo -e "${C_RED}El endpoint de métricas no responde.${C_RESET}"
+        read -r -p "ENTER..."
+        return
+    fi
+    rows=$(printf '%s\n' "$data" | awk '/^hysteria_active_conn\{/ {x=$0; sub(/^.*auth="/,"",x); sub(/".*$/, "", x); if (($NF+0)>0) print x "\t" $NF}')
+    if [ -z "$rows" ]; then
+        echo -e "${C_YELLOW}Usuarios conectados: 0${C_RESET}"
+        echo
+        echo "No hay usuarios conectados ahora mismo."
+        read -r -p "ENTER..."
+        return
+    fi
+    user_count=$(printf '%s\n' "$rows" | grep -c .)
+    connection_count=$(printf '%s\n' "$rows" | awk -F '\t' '{sum += $2} END {print sum+0}')
+    echo -e "${C_CYAN}Usuarios conectados: ${C_WHITE}${user_count}${C_RESET}"
+    echo -e "${C_CYAN}Conexiones activas:  ${C_WHITE}${connection_count}${C_RESET}"
+    echo
+    while IFS=$'\t' read -r encoded count; do
+        [ -n "$encoded" ] || continue
+        payload=$(printf '%s' "$encoded" | base64 -d 2>/dev/null || true)
+        [ -n "$payload" ] || payload="$encoded"
+        hwid="${payload%%:*}"
+        label="${payload#*:}"
+        [ "$label" = "$payload" ] && label="-"
+        expiry="sin dato"
+        wifi="sin dato"
+        if [[ "$hwid" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            response=$(curl -fsS --max-time 3 -X POST http://127.0.0.1:8989/ -H 'Content-Type: application/json' --data "{\"user\":\"$hwid\"}" 2>/dev/null || true)
+            value=$(printf '%s' "$response" | sed -n 's/.*"expiry"[[:space:]]*:[[:space:]]*"\([^\"]*\)".*/\1/p')
+            [ -n "$value" ] && expiry="$value"
+            value=$(printf '%s' "$response" | sed -n 's/.*"wifi"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p')
+            [ -n "$value" ] && wifi="$value"
+        fi
+        echo -e "${C_YELLOW}----------------------------------${C_RESET}"
+        printf '%-14s %s\n' "Usuario:" "$label"
+        printf '%-14s %s\n' "HWID:" "$hwid"
+        printf '%-14s ' "Estado:"
+        echo -e "${C_CYAN}CONECTADO${C_RESET}"
+        printf '%-14s %s\n' "Conexiones:" "$count"
+        printf '%-14s %s\n' "Vencimiento:" "$expiry"
+        printf '%-14s %s\n' "WiFi:" "$wifi"
+    done <<< "$rows"
+    echo -e "${C_YELLOW}----------------------------------${C_RESET}"
+    read -r -p "ENTER..."
+}
+function hysteria_metrics_all() {
+    clear
+    echo -e "${C_YELLOW}==================================${C_RESET}"
+    echo -e "${C_WHITE}       RESUMEN DE MÉTRICAS${C_RESET}"
+    echo -e "${C_YELLOW}==================================${C_RESET}"
+    echo
+    if ! hysteria_metrics_enabled; then echo -e "${C_YELLOW}Métricas desactivadas. Use opción 8.${C_RESET}"; read -r -p "ENTER..."; return; fi
+    data=$(curl -fsS --max-time 5 http://127.0.0.1:8080/metrics 2>/dev/null || true)
+    if [ -z "$data" ]; then echo -e "${C_RED}El endpoint no responde.${C_RESET}"; read -r -p "ENTER..."; return; fi
+    echo -e "${C_WHITE}CONEXIONES ACTIVAS${C_RESET}"; echo
+    printf '%s\n' "$data" | awk '/^hysteria_active_conn\{/ {x=$0; sub(/^.*auth="/,"",x); sub(/".*$/, "", x); if (($NF+0)>0) print x "\t" $NF}' | while IFS=$'\t' read -r auth value; do
+        decoded=$(printf '%s' "$auth" | base64 -d 2>/dev/null || true); [ -n "$decoded" ] && auth="$decoded"; hwid="${auth%%:*}"; label="${auth#*:}"; [ "$label" = "$auth" ] && label="-"
+        echo -e "${C_YELLOW}----------------------------------${C_RESET}"; printf '%-12s %s\n' 'Usuario:' "$label"; printf '%-12s %s\n' 'HWID:' "$hwid"; printf '%-12s ' 'Estado:'; echo -e "${C_CYAN}CONECTADO${C_RESET}"; printf '%-12s %s\n' 'Conexiones:' "$value"
+    done
+    echo -e "${C_YELLOW}----------------------------------${C_RESET}"; echo; echo -e "${C_WHITE}TRÁFICO ACUMULADO${C_RESET}"; down=$(printf '%s\n' "$data" | awk '/^hysteria_traffic_downlink_bytes_total/ {s+=$NF} END {print s+0}'); up=$(printf '%s\n' "$data" | awk '/^hysteria_traffic_uplink_bytes_total/ {s+=$NF} END {print s+0}'); printf '%-14s %s bytes\n' 'Descarga:' "$down"; printf '%-14s %s bytes\n' 'Subida:' "$up"; read -r -p "ENTER..."
+}
+function hysteria_toggle_metrics() {
+    clear; echo -e "${C_YELLOW}==================================${C_RESET}"; echo -e "${C_WHITE}      MÉTRICAS PROMETHEUS${C_RESET}"; echo -e "${C_YELLOW}==================================${C_RESET}"; echo
+    command -v jq >/dev/null 2>&1 || { echo -e "${C_RED}Falta jq; no se modificó nada.${C_RESET}"; read -r -p "ENTER..."; return; }
+    [ -f "$HYSTERIA_CONFIG" ] || { echo -e "${C_RED}No existe $HYSTERIA_CONFIG${C_RESET}"; read -r -p "ENTER..."; return; }
+    if hysteria_metrics_enabled; then read -r -p "Escriba DESACTIVAR para continuar: " answer; [ "$answer" = "DESACTIVAR" ] || { echo -e "${C_YELLOW}Debe escribir DESACTIVAR.${C_RESET}"; read -r -p "ENTER..."; return; }; value=null; else read -r -p "Escriba ACTIVAR para continuar: " answer; [ "$answer" = "ACTIVAR" ] || { echo -e "${C_YELLOW}Debe escribir ACTIVAR.${C_RESET}"; read -r -p "ENTER..."; return; }; value='"127.0.0.1:8080"'; fi
+    backup="$HYSTERIA_CONFIG.bak.$(date +%Y%m%d-%H%M%S)"; cp -a "$HYSTERIA_CONFIG" "$backup" || return; tmp=$(mktemp); jq --argjson v "$value" '.prometheus_listen=$v' "$HYSTERIA_CONFIG" > "$tmp" && install -m 0644 "$tmp" "$HYSTERIA_CONFIG"; rm -f "$tmp"
+    if systemctl restart "$HYSTERIA_SERVICE"; then echo -e "${C_GREEN}Métricas actualizadas correctamente.${C_RESET}"; echo "Backup: $backup"; else cp -a "$backup" "$HYSTERIA_CONFIG"; systemctl restart "$HYSTERIA_SERVICE"; echo -e "${C_RED}Falló el reinicio; configuración restaurada.${C_RESET}"; fi; read -r -p "ENTER..."
+}
 function hysteria_admin_menu() {
     while true; do
         clear
         echo -e "${C_YELLOW}==================================${C_RESET}"
         echo -e "${C_WHITE}      ADMINISTRADOR HYSTERIA 1${C_RESET}"
         echo -e "${C_YELLOW}==================================${C_RESET}"
-        echo -e "${C_CYAN}[1]${C_WHITE} Instalar/Reinstalar Hysteria${C_RESET}"
-        echo -e "${C_CYAN}[2]${C_WHITE} Estado${C_RESET}"
-        echo -e "${C_CYAN}[3]${C_WHITE} Reiniciar Hysteria y API${C_RESET}"
-        echo -e "${C_CYAN}[4]${C_WHITE} Ver logs${C_RESET}"
-        echo -e "${C_CYAN}[5]${C_WHITE} Ver configuración (sin secretos)${C_RESET}"
-        echo -e "${C_RED}[6]${C_WHITE} Desinstalar Hysteria y API${C_RESET}"
+        echo -e "${C_CYAN}[1]${C_WHITE} Instalar/Reinstalar Hysteria + API${C_RESET}"
+        echo -e "${C_CYAN}[2]${C_WHITE} Estado resumido${C_RESET}"
+        echo -e "${C_CYAN}[3]${C_WHITE} Reiniciar solo Hysteria${C_RESET}"
+        echo -e "${C_CYAN}[4]${C_WHITE} Reiniciar solo API${C_RESET}"
+        echo -e "${C_CYAN}[5]${C_WHITE} Comprobar NAT y persistencia${C_RESET}"
+        echo -e "${C_CYAN}[6]${C_WHITE} Ver eventos resumidos${C_RESET}"
+        echo -e "${C_CYAN}[7]${C_WHITE} Ver JSON completo${C_RESET}"
+        echo -e "${C_CYAN}[8]${C_WHITE} Activar/Desactivar métricas${C_RESET}"
+        echo -e "${C_CYAN}[9]${C_WHITE} Ver usuarios conectados${C_RESET}"
+        echo -e "${C_CYAN}[10]${C_WHITE} Resumen de métricas${C_RESET}"
         echo -e "${C_CYAN}[0]${C_WHITE} Volver${C_RESET}"
+        echo -e "${C_YELLOW}==================================${C_RESET}"
         read -r -p "Seleccione una opción: " opt
         case "$opt" in
             1) install_hysteria;;
-            2) systemctl status "$HYSTERIA_SERVICE" --no-pager; systemctl status "$HYSTERIA_API_SERVICE" --no-pager 2>/dev/null || true; read -r -p "ENTER...";;
-            3) sudo systemctl restart "$HYSTERIA_SERVICE"; sudo systemctl restart "$HYSTERIA_API_SERVICE" 2>/dev/null || true; read -r -p "ENTER...";;
-            4) sudo journalctl -u "$HYSTERIA_SERVICE" -n 50 --no-pager; sudo journalctl -u "$HYSTERIA_API_SERVICE" -n 30 --no-pager 2>/dev/null || true; read -r -p "ENTER...";;
-            5) sudo sed -E 's/(password|passwd|token|auth|secret|private[_-]?key)([[:space:]]*[:=][[:space:]]*).*/\1\2<REDACTED>/I' "$HYSTERIA_CONFIG" 2>/dev/null; read -r -p "ENTER...";;
-            6) read -r -p "Escriba DESINSTALAR para confirmar: " ok; if [ "$ok" = "DESINSTALAR" ]; then sudo systemctl disable --now "$HYSTERIA_SERVICE" 2>/dev/null || true; sudo systemctl disable --now "$HYSTERIA_API_SERVICE" 2>/dev/null || true; sudo rm -f "/etc/systemd/system/$HYSTERIA_SERVICE" "/etc/systemd/system/$HYSTERIA_API_SERVICE" "$HYSTERIA_BIN" /root/servidor_api.py; sudo systemctl daemon-reload; echo "Eliminado"; fi; read -r -p "ENTER...";;
+            2) clear; echo -e "${C_YELLOW}==================================${C_RESET}"; echo -e "${C_WHITE}       ESTADO RESUMIDO${C_RESET}"; echo -e "${C_YELLOW}==================================${C_RESET}"; echo; printf 'Hysteria: '; systemctl is-active --quiet "$HYSTERIA_SERVICE" && echo -e "${C_GREEN}ACTIVA${C_RESET}" || echo -e "${C_RED}DETENIDA${C_RESET}"; printf 'API:      '; systemctl is-active --quiet "$HYSTERIA_API_SERVICE" 2>/dev/null && echo -e "${C_GREEN}ACTIVA${C_RESET}" || echo -e "${C_RED}DETENIDA${C_RESET}"; printf 'UDP:      '; ss -lun | grep -q ':20000 ' && echo -e "${C_GREEN}ESCUCHANDO${C_RESET}" || echo -e "${C_RED}NO CONFIRMADO${C_RESET}"; printf 'API :8989:'; ss -ltn | grep -q ':8989 ' && echo -e "${C_GREEN}ESCUCHANDO${C_RESET}" || echo -e "${C_RED}NO ESCUCHANDO${C_RESET}"; read -r -p "ENTER...";;
+            3) systemctl restart "$HYSTERIA_SERVICE" && echo -e "${C_GREEN}Hysteria reiniciada.${C_RESET}" || echo -e "${C_RED}Falló Hysteria.${C_RESET}"; read -r -p "ENTER...";;
+            4) systemctl restart "$HYSTERIA_API_SERVICE" && echo -e "${C_GREEN}API reiniciada.${C_RESET}" || echo -e "${C_RED}Falló la API.${C_RESET}"; read -r -p "ENTER...";;
+            5) clear; echo -e "${C_YELLOW}==================================${C_RESET}"; echo -e "${C_WHITE}       NAT Y PERSISTENCIA${C_RESET}"; echo -e "${C_YELLOW}==================================${C_RESET}"; echo; echo -e "${C_WHITE}REGLAS ACTIVAS${C_RESET}"; echo -e "${C_YELLOW}----------------------------------${C_RESET}"; n=0; while IFS= read -r rule; do n=$((n+1)); echo -e "${C_CYAN}[$n]${C_RESET} $rule"; echo; done < <(iptables -t nat -S PREROUTING 2>/dev/null | grep -- "--dport" || true); [ "$n" -eq 0 ] && echo -e "${C_YELLOW}No se encontraron reglas NAT.${C_RESET}"; echo -e "${C_YELLOW}----------------------------------${C_RESET}"; echo -e "${C_WHITE}PERSISTENCIA${C_RESET}"; [ -s /etc/iptables/rules.v4 ] && echo -e "Archivo rules.v4: ${C_GREEN}EXISTE${C_RESET}" || echo -e "Archivo rules.v4: ${C_RED}NO EXISTE${C_RESET}"; read -r -p "ENTER...";;
+            6) clear; echo -e "${C_YELLOW}==================================${C_RESET}"; echo -e "${C_WHITE}       EVENTOS RELEVANTES${C_RESET}"; echo -e "${C_YELLOW}==================================${C_RESET}"; echo; if journalctl -u "$HYSTERIA_SERVICE" -n 30 --no-pager | grep -q '127.0.0.1:1080.*connection refused'; then echo -e "${C_YELLOW}Advertencia: Hysteria intenta usar el proxy local 127.0.0.1:1080, pero no hay servicio escuchando.${C_RESET}"; else echo -e "${C_GREEN}No se detectó el error del proxy local 1080.${C_RESET}"; fi; journalctl -u "$HYSTERIA_SERVICE" -n 5 --no-pager | grep -E 'ERROR|WARN|failed|started|Started' | tail -5; read -r -p "ENTER...";;
+            7) cat "$HYSTERIA_CONFIG" 2>/dev/null || echo -e "${C_RED}No existe la configuración.${C_RESET}"; read -r -p "ENTER...";;
+            8) hysteria_toggle_metrics;;
+            9) hysteria_metrics_readable;;
+            10) hysteria_metrics_all;;
             0) return;;
-            *) echo "Opción inválida"; sleep 1;;
+            *) echo -e "${C_RED}Opción inválida${C_RESET}"; sleep 1;;
         esac
     done
 }
@@ -933,6 +1028,10 @@ function hysteria_submenu() {
 # echo -e "${C_CYAN}[5] ${C_WHITE}Hysteria 1 + API ...................... [$(if is_hysteria_installed; then get_hysteria_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
 # En el case de main_menu(), agregar:
 # 5) hysteria_submenu;;
+function main_status_white() {
+    printf "%b" "$1" | sed -E $'s/\033\[[0-9;]*m//g'
+}
+
 function main_menu() {
     while true; do
         clear
@@ -940,26 +1039,19 @@ function main_menu() {
         echo -e "${C_WHITE}         PANEL DE CONTROL DE PROTOCOLOS UDP${C_RESET}"
         echo -e "${C_GRAY}         SCRIPT BY: MaulYnetZ | Versión: 1.0${C_RESET}"
         echo -e "${C_BLUE}==================================================${C_RESET}"
-        echo -e "${C_CYAN}[1] ${C_WHITE}Dropbear ............................... [$(if is_dropbear_installed; then get_dropbear_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
-        echo -e "${C_CYAN}[2] ${C_WHITE}SSL (Stunnel) .......................... [$(if is_stunnel4_installed; then get_stunnel_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
-        echo -e "${C_CYAN}[3] ${C_WHITE}BadVPN-UDP ............................. [$(get_badvpn_status)]${C_RESET}"
-        echo -e "${C_CYAN}[4] ${C_WHITE}UDP-Custom ............................. [$(get_udpcustom_status)]${C_RESET}"
-        echo -e "${C_CYAN}[5] ${C_WHITE}Hysteria 1 + API ...................... [$(if is_hysteria_installed; then get_hysteria_status; else echo -e "${C_RED}OFF${C_RESET}"; fi)]${C_RESET}"
+        printf '%b[1] %b%-18s %-24s %b[%s%b]%b\n' "$C_CYAN" "$C_WHITE" "Dropbear" "........................" "$C_WHITE" "$(get_dropbear_status)" "$C_WHITE" "$C_RESET"
+        printf '%b[2] %b%-18s %-24s %b[%s%b]%b\n' "$C_CYAN" "$C_WHITE" "SSL (Stunnel)" "........................" "$C_WHITE" "$(get_stunnel_status)" "$C_WHITE" "$C_RESET"
+        printf '%b[3] %b%-18s %-24s %b[%s%b]%b\n' "$C_CYAN" "$C_WHITE" "BadVPN-UDP" "........................" "$C_WHITE" "$(get_badvpn_status)" "$C_WHITE" "$C_RESET"
+        printf '%b[4] %b%-18s %-24s %b[%s%b]%b\n' "$C_CYAN" "$C_WHITE" "UDP-Custom" "........................" "$C_WHITE" "$(get_udpcustom_status)" "$C_WHITE" "$C_RESET"
+        printf '%b[5] %b%-18s %-24s %b[%s%b]%b\n' "$C_CYAN" "$C_WHITE" "Hysteria 1 + API" "........................" "$C_WHITE" "$(get_hysteria_status 2>/dev/null || echo -e "${C_RED}OFF${C_RESET}")" "$C_WHITE" "$C_RESET"
         echo -e "${C_BLUE}==================================================${C_RESET}"
         echo -e "${C_CYAN}[0] ${C_WHITE}Salir del Panel${C_RESET}"
         echo -e "${C_BLUE}==================================================${C_RESET}"
         echo -e -n "${C_YELLOW}Seleccione una opción: ${C_RESET}"
-        read opcion
-
-        case $opcion in
-            1) dropbear_submenu;;
-            2) ssl_submenu;;
-            3) badvpn_submenu;;
-            4) udpcustom_submenu;;
-            5) hysteria_submenu;;
-            0)
-              bash /root/MaulYnetZ/Panel_MaulYnetZ.sh
-                      exit 0;;
+        read -r opcion
+        case "$opcion" in
+            1) dropbear_submenu;; 2) ssl_submenu;; 3) badvpn_submenu;; 4) udpcustom_submenu;; 5) hysteria_submenu;;
+            0) clear; if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; else exit 0; fi;;
             *) echo -e "${C_RED}Opción inválida${C_RESET}"; sleep 1;;
         esac
     done
