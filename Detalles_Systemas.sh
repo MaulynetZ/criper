@@ -157,6 +157,47 @@ restore_backup() {
     read -p "${WHITE}Presiona ENTER para continuar...${NC}"
 }
 
+# Cambiar la zona horaria del sistema usando una lista móvil de zonas comunes
+cambiar_zona_horaria() {
+  check_root || return
+  clear
+  current_tz=$(timedatectl show --property=Timezone --value 2>/dev/null || date +%Z)
+  echo "${YELLOW}============================================================${NC}"
+  center "${CYAN}              CAMBIAR ZONA HORARIA${NC}"
+  echo "${YELLOW}============================================================${NC}"
+  echo
+  printf '%bZona actual:%b %b%s%b\n\n' "$CYAN" "$NC" "$WHITE" "$current_tz" "$NC"
+  echo "Zonas comunes:"
+  printf '  %b[1]%b America/New_York\n' "$WHITE" "$NC"
+  printf '  %b[2]%b America/Chicago\n' "$WHITE" "$NC"
+  printf '  %b[3]%b America/Los_Angeles\n' "$WHITE" "$NC"
+  printf '  %b[4]%b America/Mexico_City\n' "$WHITE" "$NC"
+  printf '  %b[5]%b America/Lima\n' "$WHITE" "$NC"
+  printf '  %b[6]%b America/Bogota (Colombia)\n' "$WHITE" "$NC"
+  printf '  %b[7]%b America/Caracas\n' "$WHITE" "$NC"
+  printf '  %b[8]%b Europe/Madrid\n' "$WHITE" "$NC"
+  printf '  %b[9]%b UTC\n' "$WHITE" "$NC"
+  echo
+  printf '%bNúmero de la zona (ENTER conserva %s):%b ' "$CYAN" "$current_tz" "$NC"; read -r tz_pick
+  if [ -z "$tz_pick" ]; then
+    echo "Zona horaria conservada: $current_tz"
+    read -p "Presiona ENTER..."
+    return
+  fi
+  case "$tz_pick" in
+    1) new_tz="America/New_York";; 2) new_tz="America/Chicago";; 3) new_tz="America/Los_Angeles";;
+    4) new_tz="America/Mexico_City";; 5) new_tz="America/Lima";; 6) new_tz="America/Bogota";;
+    7) new_tz="America/Caracas";; 8) new_tz="Europe/Madrid";; 9) new_tz="UTC";;
+    *) echo "Selección inválida."; read -p "Presiona ENTER..."; return;;
+  esac
+  if timedatectl set-timezone "$new_tz"; then
+    echo "Zona horaria aplicada: $new_tz"
+  else
+    echo "No fue posible aplicar la zona horaria."
+  fi
+  read -p "Presiona ENTER..."
+}
+
 # Función principal para mostrar los detalles del sistema (MEJORADA)
 detalles() {
   clear # Limpiar la pantalla de la terminal
@@ -171,8 +212,7 @@ detalles() {
   DISK_USED=$(df -h --total | awk '/^total/ {print $3}')  # Espacio usado en disco
   DISK_FREE=$(df -h --total | awk '/^total/ {print $4}')  # Espacio libre en disco
   UPTIME=$(uptime -p) # Tiempo de actividad del sistema
-   TZ_INFO=$(timedatectl | awk -F': ' '/Time zone/ {print $2}') # Zona horaria
-s
+  TZ_INFO=$(timedatectl | awk -F': ' '/Time zone/ {print $2}') # Zona horaria
 
 
   DATE_NOW=$(date +"%d-%m-%Y") # Fecha actual
@@ -204,8 +244,12 @@ s
   printf "  ${WHITE}%-25s ${WHITE}%-25s${NC}\n" "Usado: $DISK_USED" "Fecha: $DATE_NOW"
   printf "  ${WHITE}%-25s ${WHITE}%-25s${NC}\n" "Libre: $DISK_FREE" "Hora: $TIME_NOW"
   echo
-
-  read -p " Presiona ENTER para volver al menú..."
+  echo "${YELLOW}------------------------------------------------------------${NC}"
+  echo "   ${CYAN}[1]${NC} ${WHITE}Cambiar zona horaria${NC}"
+  echo "   ${CYAN}[0]${NC} ${WHITE}Volver al menú${NC}"
+  echo
+  printf '%bSelecciona una opción (ENTER conserva la actual):%b ' "$CYAN" "$NC"; read -r tz_option
+  [ "$tz_option" = "1" ] && cambiar_zona_horaria
 }
 
 # Funciones auxiliares (del script original)
@@ -253,6 +297,215 @@ reiniciar_vps() {
   reboot
 }
 
+cron_script_list() {
+  mapfile -t CRON_SCRIPTS < <(find "$CRON_SCRIPT_DIR" -maxdepth 1 -type f -name '*.sh' -printf '%f\n' 2>/dev/null | sort)
+}
+cron_schedule_for() {
+  local name="$1"
+  crontab -l 2>/dev/null | awk -v tag="# Detalles-Systemas-panel:""$name" '$0 ~ tag {print $1" "$2" (todos los días)"; exit}'
+}
+cron_script_details() {
+  local pick="$1" name path log schedule
+  if ! [[ "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "${#CRON_SCRIPTS[@]}" ]; then
+    echo "Selección inválida."
+    return
+  fi
+  name="${CRON_SCRIPTS[$((pick-1))]}"
+  path="$CRON_SCRIPT_DIR/$name"
+  log="$CRON_SCRIPT_DIR/${name%.sh}.log"
+  schedule=$(cron_schedule_for "${name%.sh}")
+  clear
+  echo "${YELLOW}============================================================${NC}"
+  center "${CYAN}DETALLES COMPLETOS DEL SCRIPT${NC}"
+  echo "${YELLOW}============================================================${NC}"
+  echo
+  printf '%bNombre:%b     %s\n' "$CYAN" "$NC" "$name"
+  printf '%bRuta:%b       %s\n' "$CYAN" "$NC" "$path"
+  printf '%bHorario:%b    %s\n' "$CYAN" "$NC" "${schedule:-No programado}"
+  printf '%bPermisos:%b   %s\n' "$CYAN" "$NC" "$(stat -c '%A' "$path" 2>/dev/null || echo 'No disponible')"
+  echo
+  echo "${YELLOW}---------------- CONTENIDO COMPLETO ----------------${NC}"
+  if [ -r "$path" ]; then
+    cat "$path"
+  else
+    echo "No se puede leer el script."
+  fi
+  echo "${YELLOW}---------------- ÚLTIMA SALIDA ---------------------${NC}"
+  if [ -s "$log" ]; then
+    cat "$log"
+  else
+    echo "Sin ejecuciones registradas."
+  fi
+  echo "${YELLOW}------------------------------------------------------${NC}"
+  read -p "Presiona ENTER para volver..."
+}
+
+cron_logs_resumidos() {
+  clear
+  echo "${YELLOW}============================================================${NC}"
+  center "${CYAN}              TAREAS PROGRAMADAS${NC}"
+  echo "${YELLOW}============================================================${NC}"
+  echo
+  cron_script_list
+  if [ "${#CRON_SCRIPTS[@]}" -eq 0 ]; then
+    echo "No hay tareas creadas por este panel."
+  else
+    for i in "${!CRON_SCRIPTS[@]}"; do
+      name="${CRON_SCRIPTS[$i]%.sh}"
+      log="$CRON_SCRIPT_DIR/$name.log"
+      schedule=$(cron_schedule_for "$name")
+      last=$(tail -n 1 "$log" 2>/dev/null || true)
+      printf '%b[%d] %b%s%b\n' "$CYAN" "$((i+1))" "$WHITE" "${CRON_SCRIPTS[$i]}" "$NC"
+      printf '    %bHorario:%b   %s\n' "$CYAN" "$NC" "${schedule:-No programado}"
+      printf '    %bEstado:%b   %s\n' "$CYAN" "$NC" "$( [ -s "$log" ] && printf 'Con salida registrada' || printf 'Pendiente de ejecución' )"
+      printf '    %bÚltimo:%b   %s\n' "$CYAN" "$NC" "${last:-Sin ejecución todavía}"
+      printf '    %bRuta:%b     %s\n' "$CYAN" "$NC" "$CRON_SCRIPT_DIR/${CRON_SCRIPTS[$i]}"
+      printf '%b------------------------------------------------------------%b\n' "$YELLOW" "$NC"
+    done
+  fi
+  echo
+  read -p "Número para ver ruta y contenido completo (ENTER para volver): " detail_pick
+  [ -n "$detail_pick" ] && cron_script_details "$detail_pick"
+}
+
+cron_estado() {
+  clear
+  echo "${YELLOW}============================================================${NC}"
+  center "${CYAN}              ESTADO DEL SERVICIO CRON${NC}"
+  echo "${YELLOW}============================================================${NC}"
+  echo
+  service_status=$(systemctl --no-pager --plain is-active cron 2>/dev/null || true)
+  service_enabled=$(systemctl --no-pager --plain is-enabled cron 2>/dev/null || true)
+  script_count=$(find "$CRON_SCRIPT_DIR" -maxdepth 1 -type f -name '*.sh' 2>/dev/null | wc -l)
+  job_count=$(crontab -l 2>/dev/null | grep -c '# Detalles-Systemas-panel:' || true)
+  printf '%bServicio:%b          %b%s%b\n' "$CYAN" "$NC" "$WHITE" "${service_status:-No disponible}" "$NC"
+  printf '%bInicio automático:%b %b%s%b\n' "$CYAN" "$NC" "$WHITE" "${service_enabled:-No disponible}" "$NC"
+  printf '%bScripts del panel:%b  %b%s%b\n' "$CYAN" "$NC" "$WHITE" "$script_count" "$NC"
+  printf '%bTareas programadas:%b %b%s%b\n' "$CYAN" "$NC" "$WHITE" "$job_count" "$NC"
+  echo
+  if [ "$service_status" = "active" ]; then
+    echo "Cron está funcionando y ejecutará las tareas según su horario."
+  else
+    echo "Cron no aparece activo en este momento."
+  fi
+  echo
+  read -p "Presiona ENTER para volver..."
+}
+
+cron_ejecuciones_fecha() {
+  clear
+  echo "${YELLOW}============================================================${NC}"
+  center "${CYAN}          EJECUCIONES DE TAREAS POR FECHA${NC}"
+  echo "${YELLOW}============================================================${NC}"
+  echo
+  cron_script_list
+  if [ "${#CRON_SCRIPTS[@]}" -eq 0 ]; then
+    echo "No hay scripts creados por el panel."
+    read -p "Presiona ENTER para volver..."
+    return
+  fi
+  echo "Seleccione el script cuyos logs desea consultar:"
+  for i in "${!CRON_SCRIPTS[@]}"; do
+    printf '  %b[%d]%b %b%s%b\n' "$WHITE" "$((i+1))" "$NC" "$YELLOW" "${CRON_SCRIPTS[$i]}" "$NC"
+  done
+  echo
+  printf '%bNúmero del script:%b ' "$CYAN" "$NC"; read -r pick
+  if ! [[ "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "${#CRON_SCRIPTS[@]}" ]; then
+    echo "Selección inválida."; read -p "Presiona ENTER..."; return
+  fi
+  name="${CRON_SCRIPTS[$((pick-1))]%.sh}"
+  log="$CRON_SCRIPT_DIR/$name.log"
+  printf '%bFecha (AAAA-MM-DD) o ENTER para ver todas las ejecuciones:%b ' "$CYAN" "$NC"; read -r fecha
+  clear
+  echo "${YELLOW}============================================================${NC}"
+  center "${CYAN}              LOGS DE $name${NC}"
+  echo "${YELLOW}============================================================${NC}"
+  echo
+  if [ -n "$fecha" ]; then
+    matches=$(grep -F "[$fecha" "$log" 2>/dev/null || true)
+  else
+    matches=$(cat "$log" 2>/dev/null || true)
+  fi
+  if [ -n "$matches" ]; then
+    printf '%s\n' "$matches"
+  else
+    echo "Sin ejecuciones registradas para esa fecha."
+  fi
+  echo
+  read -p "Presiona ENTER para volver..."
+}
+
+cron_admin() {
+  check_root || return
+  CRON_SCRIPT_DIR="/usr/local/sbin/detalles-cron"
+  mkdir -p "$CRON_SCRIPT_DIR"
+  while true; do
+    clear
+    echo "${YELLOW}============================================================${NC}"
+    center "${CYAN}        ADMINISTRADOR DE TAREAS CRON${NC}"
+    echo "${YELLOW}============================================================${NC}"
+    echo
+    echo "   ${CYAN}[1]${NC} ${WHITE}Ver scripts, rutas, horarios y última salida${NC}"
+    echo "   ${CYAN}[2]${NC} ${WHITE}Crear script .sh y programarlo${NC}"
+    echo "   ${CYAN}[3]${NC} ${WHITE}Ejecutar ahora / probar un script${NC}"
+    echo "   ${CYAN}[4]${NC} ${WHITE}Editar hora de una tarea${NC}"
+    echo "   ${CYAN}[5]${NC} ${WHITE}Ver estado de cron${NC}"
+    echo "   ${CYAN}[6]${NC} ${WHITE}Ver ejecuciones por fecha y hora${NC}"
+    echo "   ${CYAN}[7]${NC} ${WHITE}Eliminar un script y su tarea${NC}"
+    echo "   ${CYAN}[0]${NC} ${WHITE}Volver${NC}"
+    echo
+    read -p " Selecciona una opción: " co
+    case "$co" in
+      1) cron_logs_resumidos;;
+      2)
+        clear; echo "${YELLOW}CREAR SCRIPT .SH Y PROGRAMARLO${NC}"; echo
+        printf '%bNombre del script%b (ejemplo: backup-diario): ' "$CYAN" "$NC"; read -r script_name
+        script_name=$(printf '%s' "$script_name" | tr -cs 'A-Za-z0-9_-' '-'); script_name=${script_name#-}; script_name=${script_name%-}
+        if [ -z "$script_name" ]; then echo "Nombre inválido."; read -p "Presiona ENTER..."; continue; fi
+        script_path="$CRON_SCRIPT_DIR/${script_name}.sh"; log_path="$CRON_SCRIPT_DIR/${script_name}.log"
+        echo; printf '%bPegue el código completo. Termine escribiendo exactamente FIN.%b\n\n' "$CYAN" "$NC"
+        code=""; while IFS= read -r line; do [ "$line" = "FIN" ] && break; code+="$line"$'\n'; done
+        if [ -z "$code" ]; then echo "No se recibió código."; read -p "Presiona ENTER..."; continue; fi
+        printf '%s' "$code" > "$script_path"; chmod 0755 "$script_path"
+        printf '%bHora (0-23):%b ' "$CYAN" "$NC"; read -r ch; printf '%bMinuto (0-59):%b ' "$CYAN" "$NC"; read -r cm
+        if ! [[ "$ch" =~ ^([0-9]|1[0-9]|2[0-3])$ && "$cm" =~ ^([0-9]|[1-5][0-9])$ ]]; then rm -f "$script_path"; echo "Hora o minuto inválido; no se creó la tarea."; read -p "Presiona ENTER..."; continue; fi
+        (crontab -l 2>/dev/null | grep -v "# Detalles-Systemas-panel:$script_name" || true; printf '%s %s * * * { printf \"[%%s]\" \"$(date +\"%%Y-%%m-%%d %%H:%%M:%%S\")\"; %s; } >> %s 2>&1 # Detalles-Systemas-panel:%s\n' "$cm" "$ch" "$script_path" "$log_path" "$script_name") | crontab -
+        echo; echo "Tarea creada para $(printf '%02d:%02d' "$ch" "$cm")."; echo "Script: $script_path"; echo "Log:    $log_path"; read -p "Presiona ENTER...";;
+      3)
+        clear; echo "${YELLOW}EJECUTAR AHORA / PROBAR SCRIPT${NC}"; echo
+        cron_script_list
+        if [ "${#CRON_SCRIPTS[@]}" -eq 0 ]; then echo "No hay scripts creados por el panel."; read -p "Presiona ENTER..."; continue; fi
+        for i in "${!CRON_SCRIPTS[@]}"; do printf '  %b[%d]%b %b%s%b\n' "$WHITE" "$((i+1))" "$NC" "$YELLOW" "${CRON_SCRIPTS[$i]}" "$NC"; done
+        echo; printf '%bSeleccione el número del script:%b ' "$CYAN" "$NC"; read -r pick
+        if ! [[ "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "${#CRON_SCRIPTS[@]}" ]; then echo "Selección inválida."; read -p "Presiona ENTER..."; continue; fi
+        selected="${CRON_SCRIPTS[$((pick-1))]}"; selected_path="$CRON_SCRIPT_DIR/$selected"; selected_log="$CRON_SCRIPT_DIR/${selected%.sh}.log"
+        echo; echo "${YELLOW}============================================================${NC}"; echo "${CYAN}              RESULTADO DE LA PRUEBA${NC}"; echo "${YELLOW}============================================================${NC}"; echo; echo "Tarea: $selected"; echo
+        printf "[%s] " "$(date "+%Y-%m-%d %H:%M:%S")" | tee -a "$selected_log"; bash "$selected_path" 2>&1 | tee -a "$selected_log"; rc=${PIPESTATUS[0]}
+        echo; echo "${YELLOW}------------------------------------------------------------${NC}"; if [ "$rc" -eq 0 ]; then echo "Ejecución terminada correctamente."; else echo "La ejecución terminó con errores."; fi; echo "${YELLOW}------------------------------------------------------------${NC}"; read -p "Presiona ENTER...";;
+      4)
+        clear; echo "${YELLOW}EDITAR HORA DE UNA TAREA${NC}"; echo
+        cron_script_list
+        if [ "${#CRON_SCRIPTS[@]}" -eq 0 ]; then echo "No hay scripts creados por el panel."; read -p "Presiona ENTER..."; continue; fi
+        for i in "${!CRON_SCRIPTS[@]}"; do printf '  %b[%d]%b %b%s%b\n' "$WHITE" "$((i+1))" "$NC" "$YELLOW" "${CRON_SCRIPTS[$i]}" "$NC"; done
+        printf '%bSeleccione el número de la tarea:%b ' "$CYAN" "$NC"; read -r pick; if ! [[ "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "${#CRON_SCRIPTS[@]}" ]; then echo "Selección inválida."; read -p "Presiona ENTER..."; continue; fi
+        name="${CRON_SCRIPTS[$((pick-1))]%.sh}"; path="$CRON_SCRIPT_DIR/$name.sh"; printf '%bNueva hora (0-23):%b ' "$CYAN" "$NC"; read -r nh; printf '%bNuevo minuto (0-59):%b ' "$CYAN" "$NC"; read -r nm
+        if ! [[ "$nh" =~ ^([0-9]|1[0-9]|2[0-3])$ && "$nm" =~ ^([0-9]|[1-5][0-9])$ ]]; then echo "Hora o minuto inválido."; read -p "Presiona ENTER..."; continue; fi
+        log="$CRON_SCRIPT_DIR/$name.log"; (crontab -l 2>/dev/null | grep -v "# Detalles-Systemas-panel:$name" || true; printf '%s %s * * * { printf \"[%%s]\" \"$(date +\"%%Y-%%m-%%d %%H:%%M:%%S\")\"; %s; } >> %s 2>&1 # Detalles-Systemas-panel:%s\n' "$nm" "$nh" "$path" "$log" "$name") | crontab -; echo "Horario actualizado: $(printf '%02d:%02d' "$nh" "$nm")"; echo "Script conservado: $path"; read -p "Presiona ENTER...";;
+      5) cron_estado;;
+      6) cron_ejecuciones_fecha;;
+      7)
+        clear; echo "${YELLOW}ELIMINAR SCRIPT Y TAREA${NC}"; echo
+        cron_script_list
+        if [ "${#CRON_SCRIPTS[@]}" -eq 0 ]; then echo "No hay scripts creados por el panel."; read -p "Presiona ENTER..."; continue; fi
+        for i in "${!CRON_SCRIPTS[@]}"; do printf '  %b[%d]%b %b%s%b\n' "$WHITE" "$((i+1))" "$NC" "$YELLOW" "${CRON_SCRIPTS[$i]}" "$NC"; done
+        printf '%bSeleccione el número del script:%b ' "$CYAN" "$NC"; read -r dpick; if ! [[ "$dpick" =~ ^[0-9]+$ ]] || [ "$dpick" -lt 1 ] || [ "$dpick" -gt "${#CRON_SCRIPTS[@]}" ]; then echo "Selección inválida."; read -p "Presiona ENTER..."; continue; fi
+        dfile="${CRON_SCRIPTS[$((dpick-1))]}"; dname="${dfile%.sh}"; dpath="$CRON_SCRIPT_DIR/$dfile"; read -p "Escriba S o Sí para eliminar, N o No para cancelar: " ok
+        if [[ "$ok" =~ ^[SsYy][IiíÍ]?$ ]]; then rm -f "$dpath" "$CRON_SCRIPT_DIR/$dname.log"; (crontab -l 2>/dev/null | grep -v "# Detalles-Systemas-panel:$dname" || true) | crontab -; echo "Script, log y tarea eliminados."; else echo "Operación cancelada."; fi; read -p "Presiona ENTER...";;
+      0) return;; *) echo "Opción inválida"; sleep 1;;
+    esac
+  done
+}
+
 # Menú principal (del script original)
 while true; do
   clear
@@ -267,6 +520,7 @@ while true; do
   echo "   ${CYAN}[4]${NC} ${WHITE}Mostrar detalles del sistema${NC}"
   echo "   ${CYAN}[5]${NC} ${WHITE}Hacer Backup de Usuarios (solo 'hwid')${NC}"
   echo "   ${CYAN}[6]${NC} ${WHITE}Restaurar Último Backup de Usuarios (solo 'hwid')${NC}"
+  echo "   ${CYAN}[7]${NC} ${WHITE}Administrar tareas Cron${NC}"
   echo "   ${CYAN}[0]${NC} ${WHITE}Salir${NC}"
   echo
 
@@ -279,8 +533,8 @@ while true; do
     4) detalles ;;
     5) create_backup ;;
     6) restore_backup ;;
+    7) cron_admin ;;
     0) break;;
     *) echo "Opción inválida"; sleep 2 ;;
   esac
 done
-
