@@ -163,23 +163,19 @@ echo -e "\n\033[1;36m¿Desea programar la limpieza automática diaria a las 2 AM
 echo -e "   Presione ENTER para aceptar, o Ctrl+C para omitir."
 read -r
 
-# Crear directorio si no existe
-mkdir -p /root/auto
+# Instalar elimauto.sh dentro del directorio administrado por el panel Cron
+CRON_PANEL_DIR="/usr/local/sbin/detalles-cron"
+mkdir -p "$CRON_PANEL_DIR"
 
 # Descargar el script elimauto.sh desde GitHub
-wget -O /root/auto/elimauto.sh https://raw.githubusercontent.com/MaulynetZ/criper/main/elimauto.sh
+wget -O "$CRON_PANEL_DIR/elimauto.sh" https://raw.githubusercontent.com/MaulynetZ/criper/main/elimauto.sh
 
-# Dar permisos de ejecución
-chmod +x /root/auto/elimauto.sh
+# Dar permisos de ejecución y preparar su log junto al script
+chmod 0755 "$CRON_PANEL_DIR/elimauto.sh"
+touch "$CRON_PANEL_DIR/elimauto.log"
+chmod 0644 "$CRON_PANEL_DIR/elimauto.log"
 
-# Asegurar carpeta y archivo de log
-mkdir -p /var/log/maulynetz
-touch /var/log/maulynetz/elimauto.log
-chmod 644 /var/log/maulynetz/elimauto.log
-
-# Programar cron job diario a las 2 AM
-# Primero quitamos cualquier línea previa igual para no duplicar
-(crontab -l 2>/dev/null | grep -v 'elimauto.sh' ; echo "0 2 * * * /root/auto/elimauto.sh >> /var/log/maulynetz/elimauto.log 2>&1") | crontab -
+# Programar cron diario a las 2 AM, sin duplicar la tarea del panel
+(crontab -l 2>/dev/null | grep -vE 'elimauto\.sh|# Detalles-Systemas-panel:elimauto' || true; printf '0 2 * * * { printf "[%%s]" "$(date +"%%Y-%%m-%%d %%H:%%M:%%S")"; "%s/elimauto.sh"; } >> "%s/elimauto.log" 2>&1 # Detalles-Systemas-panel:elimauto\n' "$CRON_PANEL_DIR" "$CRON_PANEL_DIR") | crontab -
 
 echo -e "\033[1;32m✔ Limpieza automática programada correctamente.\033[0m"
-
